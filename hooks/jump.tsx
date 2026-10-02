@@ -1,7 +1,7 @@
 import type { ClientModule } from 'claude-code'
 
-import type { JumpProps } from '../types'
-import { TICK_MS, frame, newGame, press, step } from './game'
+import type { JumpMessage, JumpProps, JumpReady } from '../types'
+import { TICK_MS, frame, newGame, pause, press, step } from './game'
 import type { Game } from './game'
 
 const FALLBACK_COLUMNS = 60
@@ -20,15 +20,30 @@ const isJumpKey = (key: string) =>
   key === 'w' ||
   key === 'k'
 
-// Runs on the drawing thread: owns the frame clock and input, and posts the
-// best score to the hooks module while a run leads and when it ends above it.
+// Each instance's handler for a new turn, reached from the later calls that
+// bring new props: the clock and input closures hold the game, not `state`.
+const newTurn = new WeakMap<object, (props: JumpProps) => void>()
+
+const start = (props: JumpReady): Game =>
+  props.resume === undefined
+    ? newGame(props.best, Math.floor(Math.random() * 0x100000000))
+    : pause({ ...props.resume, best: Math.max(props.best, props.resume.best) })
+
+// Runs on the drawing thread: owns the frame clock and input, and posts each
+// change of the game to the hooks module, which keeps it to resume the run
+// after a prompt, with the best score while a run leads and when it ends above it.
 const Jump: ClientModule<JumpProps, Game> = (props, surface) => {
   const { Box, Text } = surface.elements
   const width = () => (surface.columns > 0 ? surface.columns : FALLBACK_COLUMNS)
 
   let game = surface.state
-  if (game === undefined) {
-    let current = newGame(props.best, Math.floor(Math.random() * 0x100000000))
+  if (game === undefined && !('isReady' in props)) {
+    // The hooks module answers with the run to resume, if any; until then the
+    // band shows a fresh game that takes no input.
+    surface.post({ hello: true } satisfies JumpMessage)
+  } else if (game === undefined && 'isReady' in props) {
+    let { epoch } = props
+    let current = start(props)
     let posted = current.best
     let ticksSincePost = 0
     const set = (next: Game) => {
@@ -37,15 +52,14 @@ const Jump: ClientModule<JumpProps, Game> = (props, surface) => {
       current = next
       surface.setState(next)
       const score = Math.max(next.best, next.score)
-      if (score <= posted) return
       // A run raises `best` only when it ends, so while it plays posted <= best
       // means it has just taken the lead and nothing of it is posted yet.
       const hasJustLed = posted <= next.best
-      if (hasEnded || hasJustLed || ticksSincePost >= POST_EVERY_TICKS) {
+      if (score > posted && (hasEnded || hasJustLed || ticksSincePost >= POST_EVERY_TICKS)) {
         posted = score
         ticksSincePost = 0
-        surface.post({ best: score })
       }
+      surface.post({ epoch, game: next, best: posted } satisfies JumpMessage)
     }
     surface.every(TICK_MS, () => {
       ticksSincePost += 1
@@ -57,13 +71,23 @@ const Jump: ClientModule<JumpProps, Game> = (props, surface) => {
     surface.onPointer(e => {
       if (e.type === 'down') set(press(current))
     })
+    // A band drawn on past the turn's end plays the next turn afresh; that
+    // turn has no run yet, so nothing is posted until it starts one.
+    newTurn.set(surface, next => {
+      if (!('turns' in next) || next.turns <= epoch) return
+      epoch = next.turns
+      current = newGame(Math.max(current.best, current.score, next.best), current.seed)
+      surface.setState(current)
+    })
     surface.setState(current)
     game = current
+  } else {
+    newTurn.get(surface)?.(props)
   }
 
   return (
     <Box flexDirection="column">
-      {frame(game, width()).map(row => (
+      {frame(game ?? newGame(props.best, 0), width()).map(row => (
         <Text wrap="truncate">
           {row.map(seg => (
             <Text color={seg.color} dimColor={seg.dim} bold={seg.bold}>

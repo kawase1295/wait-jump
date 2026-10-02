@@ -1,8 +1,23 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { FIELD_ROWS, PLAYER_X, frame, newGame, press, speedOf, step } from './game'
+import {
+  FIELD_ROWS,
+  PLAYER_X,
+  RESUME_TICKS,
+  frame,
+  newGame,
+  pause,
+  press,
+  speedOf,
+  step,
+} from './game'
 
 const WIDTH = 60
+
+const text = (g: ReturnType<typeof newGame>) =>
+  frame(g, WIDTH)
+    .map(row => row.map(seg => seg.text).join(''))
+    .join('\n')
 
 const run = (g: ReturnType<typeof newGame>, ticks: number) => {
   let cur = g
@@ -107,5 +122,42 @@ describe('game', () => {
     const text = rows.map(row => row.map(seg => seg.text).join('')).join('\n')
     expect(text).toContain('HI 00042')
     expect(text).toContain('✻')
+  })
+
+  test('a paused run keeps its score and obstacles still until the countdown ends', async () => {
+    const playing = run(press(newGame(0, 7)), 40)
+    expect(playing.phase).toBe('playing')
+    const paused = pause(playing)
+    expect(paused.phase).toBe('paused')
+    const waiting = run(paused, RESUME_TICKS - 1)
+    expect(waiting.phase).toBe('paused')
+    expect(waiting.score).toBe(playing.score)
+    expect(waiting.obstacles).toEqual(playing.obstacles)
+    expect(text(waiting)).toContain('PAUSED')
+    const resumed = run(paused, RESUME_TICKS)
+    expect(resumed.phase).toBe('playing')
+    expect(run(resumed, 10).score).toBeGreaterThan(playing.score)
+  })
+
+  test('the countdown shows the seconds left', async () => {
+    const paused = pause(press(newGame(0, 1)))
+    expect(text(paused)).toContain('RESUME IN 3')
+    expect(text(run(paused, RESUME_TICKS - 1))).toContain('RESUME IN 1')
+  })
+
+  test('a press resumes a paused run at once, without a jump', async () => {
+    const paused = pause(run(press(newGame(0, 7)), 40))
+    const resumed = press(paused)
+    expect(resumed.phase).toBe('playing')
+    expect(resumed.vy).toBe(0)
+  })
+
+  test('pausing leaves a run that is not playing as it was', async () => {
+    const ready = newGame(0, 1)
+    expect(pause(ready)).toBe(ready)
+    const over = step({ ...press(newGame(0, 1)), obstacles: [{ x: PLAYER_X, w: 1, h: 1 }] }, WIDTH)
+    expect(pause(over)).toBe(over)
+    const paused = pause(press(newGame(0, 1)))
+    expect(pause(run(paused, 5)).resumeTicks).toBe(RESUME_TICKS)
   })
 })
