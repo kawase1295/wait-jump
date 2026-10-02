@@ -1,9 +1,9 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register, Timer } from 'claude-code'
 
 import type { JumpMessage, JumpProps, JumpReady } from '../types'
-import { FIELD_ROWS, isGame } from './game'
-import type { Game } from './game'
+import { FIELD_ROWS, hasSetBest, isGame, resultFrame } from './game'
+import type { Game, Segment } from './game'
 
 const best = atom({ plugin: 'wait-jump', key: 'best' } as const, 0)
 const isEnabled = atom({ plugin: 'wait-jump', key: 'isEnabled' } as const, true)
@@ -11,6 +11,7 @@ const run = atom({ plugin: 'wait-jump', key: 'run' } as const, {
   epoch: 0,
   game: null as Game | null,
 })
+const result = atom({ plugin: 'wait-jump', key: 'result' } as const, null)
 // `run.epoch` as drawing reads it: `run` changes every frame, this once a turn.
 const turns = atom({ plugin: 'wait-jump', key: 'turns' } as const, 0)
 
@@ -21,6 +22,7 @@ const GAME_ROWS = FIELD_ROWS + 2
 const FRAME_ROWS = GAME_ROWS + 2
 // A fullscreen band spans the whole terminal; past this the field is too long to play.
 const MAX_COLUMNS = 80
+const RESULT_MS = 10_000
 
 const isObject = (data: unknown): data is Record<string, unknown> =>
   typeof data === 'object' && data !== null
@@ -32,12 +34,19 @@ const isMessage = (data: unknown): data is JumpMessage =>
       Number.isFinite(data.best) &&
       (data.game === undefined || (Number.isFinite(data.epoch) && isGame(data.game)))))
 
-const pad = (n: number) => String(n).padStart(5, '0')
-
 async function raiseBest($: EngineInterface, score: number) {
   if (!Number.isFinite(score) || score <= (await read($, best))) return
   await update($, best, n => Math.max(n, score))
   await $.store.set(BEST_KEY, score)
+}
+
+// The timer that takes the shown result away; a newer result or turn cancels it.
+let resultTimer: Timer | undefined
+
+async function clearResult($: EngineInterface) {
+  resultTimer?.cancel()
+  resultTimer = undefined
+  await update($, result, () => null)
 }
 
 export const register: Register = on => {
@@ -50,6 +59,8 @@ export const register: Register = on => {
     await update($, best, n => Math.max(n, Number.isFinite(stored) ? stored : 0))
     const enabled = await $.store.get(ENABLED_KEY)
     if (typeof enabled === 'boolean') await update($, isEnabled, () => enabled)
+    // A reload cancels the timer but keeps $.state: drop a result nothing would clear.
+    await clearResult($)
 
     return next(e)
   })
@@ -92,6 +103,11 @@ export const register: Register = on => {
     return {}
   })
 
+  on('turn.start', async ($, e, next) => {
+    await clearResult($)
+    return next(e)
+  })
+
   // A prompt mid-turn raises no turn.complete, so its run stays to resume.
   on('turn.complete', async ($, e, next) => {
     if (e.agentId !== undefined) return next(e)
@@ -107,9 +123,13 @@ export const register: Register = on => {
     // A band drawn on into the next turn learns of it here and starts afresh.
     await update($, turns, () => epoch)
     const game = settled as Game | null
+    await clearResult($)
     if (game !== null && game.phase !== 'ready') {
       await raiseBest($, Math.max(game.best, game.score))
-      $.ui.toast(`SCORE ${pad(game.score)} / HI ${pad(await read($, best))}`)
+      const high = await read($, best)
+      const shown = { score: game.score, best: high, isNewBest: hasSetBest(game) && game.score >= high }
+      await update($, result, () => shown)
+      resultTimer = $.clock.after(RESULT_MS, () => void clearResult($))
     }
 
     return next(e)
@@ -117,31 +137,43 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const { hasSurvey, isWorking, maxRows, bodyColumns } = e.props
-    if (hasSurvey || !isWorking || maxRows < FRAME_ROWS || !(await read($, isEnabled))) {
-      return next(e)
-    }
+    if (hasSurvey || maxRows < FRAME_ROWS || !(await read($, isEnabled))) return next(e)
+    // After the turn the band stays up with its result until that is cleared.
+    const shown = isWorking ? null : await read($, result)
+    if (!isWorking && shown === null) return next(e)
     const table = $.ui.resolve(e)
     if (!('Client' in table)) return next(e)
-    const { Box, Client } = table
+    const { Box, Client, Text } = table
     // Other mods beneath draw in the same band: keep theirs, below the game.
     const below = await next(e)
+    const width = Math.min(bodyColumns, MAX_COLUMNS)
+    const drawRow = (row: Segment[], i: number) => (
+      <Text key={`row-${i}`} wrap="truncate">
+        {row.map(seg => (
+          <Text color={seg.color} dimColor={seg.dim} bold={seg.bold}>
+            {seg.text}
+          </Text>
+        ))}
+      </Text>
+    )
 
     return (
       <Box flexDirection="column">
-        <Box
-          key="frame"
-          borderStyle="round"
-          borderDimColor
-          width={Math.min(bodyColumns, MAX_COLUMNS)}
-          height={FRAME_ROWS}
-        >
-          <Client
-            key="game"
-            module="./jump.tsx"
-            props={{ best: await read($, best), turns: await read($, turns) } satisfies JumpProps}
-            width="100%"
-            height={GAME_ROWS}
-          />
+        <Box key="frame" borderStyle="round" borderDimColor width={width} height={FRAME_ROWS}>
+          {shown === null ? (
+            <Client
+              key="game"
+              module="./jump.tsx"
+              props={{ best: await read($, best), turns: await read($, turns) } satisfies JumpProps}
+              width="100%"
+              height={GAME_ROWS}
+            />
+          ) : (
+            // Plain text, no Client: the result takes no keys.
+            <Box key="result" flexDirection="column" width="100%" height={GAME_ROWS}>
+              {resultFrame(shown, width - 2).map(drawRow)}
+            </Box>
+          )}
         </Box>
         {below}
       </Box>

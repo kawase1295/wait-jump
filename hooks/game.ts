@@ -176,20 +176,7 @@ export const frame = (g: Game, width: number): Segment[][] => {
   const cols = Math.max(20, width)
   const rows: Segment[][] = []
 
-  const right = `HI ${pad(g.best)}  ${pad(g.score)}`
-  const title = '✻ Claude Jump'
-  const gap = Math.max(1, cols - title.length - right.length)
-  // fit trims the status row when the band is narrower than its text.
-  rows.push(
-    fit(
-      [
-        { text: title, color: CLAUDE, bold: true },
-        { text: ' '.repeat(gap) },
-        { text: right, dim: true },
-      ],
-      cols,
-    ),
-  )
+  rows.push(statusRow(g.best, g.score, cols))
 
   const player = playerRow(g.y)
   // ASCII only: every character must take exactly one cell.
@@ -226,9 +213,59 @@ export const frame = (g: Game, width: number): Segment[][] => {
     rows.push(merge(cells))
   }
 
-  rows.push([{ text: '─'.repeat(cols), dim: true }])
+  rows.push(groundRow(cols))
 
   return rows
+}
+
+const statusRow = (best: number, score: number, cols: number): Segment[] => {
+  const right = `HI ${pad(best)}  ${pad(score)}`
+  const title = '✻ Claude Jump'
+  const gap = Math.max(1, cols - title.length - right.length)
+  // fit trims the status row when the band is narrower than its text.
+  return fit(
+    [
+      { text: title, color: CLAUDE, bold: true },
+      { text: ' '.repeat(gap) },
+      { text: right, dim: true },
+    ],
+    cols,
+  )
+}
+
+const groundRow = (cols: number): Segment[] => [{ text: '─'.repeat(cols), dim: true }]
+
+/**
+ * Whether a run passed the high score it started under. A run raises `best`
+ * only as it ends, so an ended run that set it holds `best === score`; one
+ * that ended exactly on the old high score reads the same.
+ */
+export const hasSetBest = (g: Game): boolean =>
+  g.phase === 'over' ? g.score > 0 && g.score === g.best : g.score > g.best
+
+/** A settled run: its score, the high score after it, and whether it set that. */
+export type Result = { score: number; best: number; isNewBest: boolean }
+
+/** Draws a settled run in the game's place, the same size: status row, field, ground. */
+export const resultFrame = (r: Result, width: number): Segment[][] => {
+  const cols = Math.max(20, width)
+  const message = `CLAUDE IS DONE  SCORE ${pad(r.score)}`
+  const mark = r.isNewBest ? '  NEW HI' : ''
+  const start = Math.max(0, Math.floor((cols - message.length - mark.length) / 2))
+  const field = Array.from({ length: FIELD_ROWS }, (_, i): Segment[] =>
+    i === 1
+      ? fit(
+          [
+            { text: ' '.repeat(start) },
+            { text: message, bold: true },
+            { text: mark, color: CLAUDE, bold: true },
+          ].filter(seg => seg.text !== ''),
+          cols,
+        )
+      : [{ text: ' '.repeat(cols) }],
+  )
+
+  return [statusRow(r.best, r.score, cols), ...field, groundRow(cols)]
 }
 
 const sameStyle = (a: Segment, b: Segment) =>

@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
-import type { Engine } from 'claude-code/testing'
+import type { Engine, Mounted } from 'claude-code/testing'
 
 // The world beneath the plugin: an in-memory store, an empty band and the
 // engine's bare answers to the calls the plugin makes.
@@ -9,19 +9,21 @@ const world = (on: On) => {
   on('ui.render', () => ({ type: 'Box' }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))
   on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('turn.start', ($, e) => ({ turnId: e.turnId }))
   on('turn.complete', ($, e) => ({ text: e.answer }))
+  const clock = mock.clock(on)
   const toasts: string[] = []
   on('ui.toast', ($, e) => {
     toasts.push(e.text)
     return { value: undefined }
   })
-  return { toasts }
+  return { clock, toasts }
 }
 
-const band = (isWorking: boolean, bodyColumns = 60, maxRows = 20) => ({
+const band = (isWorking: boolean, bodyColumns = 60, maxRows = 20, hasSurvey = false) => ({
   component: 'AbovePrompt' as const,
   props: {
-    hasSurvey: false,
+    hasSurvey,
     isWorking,
     maxRows,
     bodyColumns,
@@ -182,10 +184,10 @@ const mountBand = async ($: Engine) => {
   return ui
 }
 
-const drawnText = async (ui: Awaited<ReturnType<typeof mountBand>>) =>
+const drawnText = async (ui: Pick<Mounted, 'find'>) =>
   JSON.stringify(await ui.find({ in: 'game', text: /HI \d{5}/ }))
 
-const scoreOf = async (ui: Awaited<ReturnType<typeof mountBand>>) =>
+const scoreOf = async (ui: Pick<Mounted, 'find'>) =>
   Number(/HI \d{5} {2}(\d{5})/.exec(await drawnText(ui))?.[1])
 
 const endTurn = ($: Engine, agentId?: string) =>
@@ -242,13 +244,130 @@ test('a key press resumes a paused run before the countdown ends', async ($, on)
   await again.unmount()
 })
 
-test('the turn end settles the run: a toast names it and the next turn starts afresh', async ($, on) => {
+const pad = (n: number) => String(n).padStart(5, '0')
+
+// The band after the turn: what the engine draws once `isWorking` is false.
+const mountIdle = ($: Engine, bodyColumns = 60, maxRows = 20, hasSurvey = false) =>
+  $.ui.mount({ plugin: 'wait-jump', surface: 'terminal', ...band(false, bodyColumns, maxRows, hasSurvey) })
+
+const resultOf = async (ui: Pick<Mounted, 'find'>) =>
+  (await ui.find({ type: 'Text', text: /CLAUDE IS DONE/ }))?.text?.trim()
+
+test('the turn end shows the result in the framed band, with no toast', async ($, on) => {
   const { toasts } = world(on)
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount({ plugin: 'wait-jump', surface, ...band(true) })
+    await ui.resize({ columns: 60, rows: 6 })
+    await ui.key({ key: ' ' })
+    await ui.advance(3000)
+    const score = await scoreOf(ui)
+    await endTurn($)
+    // The turn's end takes `isWorking` away; the band stays up with the result.
+    await ui.redraw({ ...band(false).props })
+    expect(await ui.find({ key: 'game' })).toBeUndefined()
+    expect((await ui.find({ key: 'frame' }))?.props.borderStyle).toBe('round')
+    // The first run sets the high score; the second only ties it.
+    const mark = surface === 'terminal' ? '  NEW HI' : ''
+    expect(await resultOf(ui)).toBe(`CLAUDE IS DONE  SCORE ${pad(score)}${mark}`)
+    expect(await ui.find({ text: new RegExp(`HI ${pad(score)} {2}${pad(score)}`) })).toBeDefined()
+    await ui.unmount()
+    await $.turn.start({ text: '', turnId: 'next' })
+  }
+  expect(toasts).toEqual([])
+})
+
+test('the result names the high score when the run fell short of it', async ($, on) => {
+  world(on)
+  const seed = await $.ui.mount({ plugin: 'wait-jump', surface: 'terminal', ...band(true) })
+  await seed.post({ best: 213 })
+  await seed.unmount()
   const { score } = await playAndCut($, 3000)
   await endTurn($)
-  const pad = (n: number) => String(n).padStart(5, '0')
-  expect(toasts).toEqual([`SCORE ${pad(score)} / HI ${pad(score)}`])
+  const ui = await mountIdle($)
+  expect(await resultOf(ui)).toBe(`CLAUDE IS DONE  SCORE ${pad(score)}`)
+  expect(await ui.find({ text: new RegExp(`HI 00213 {2}${pad(score)}`) })).toBeDefined()
+  await ui.unmount()
+})
 
+test('the result goes away by itself after 10 seconds', async ($, on) => {
+  const { clock } = world(on)
+  await playAndCut($, 3000)
+  await endTurn($)
+  const ui = await mountIdle($)
+  await clock.advance(9900)
+  expect(await resultOf(ui)).toBeDefined()
+  await clock.advance(100)
+  expect(await resultOf(ui)).toBeUndefined()
+  expect(await ui.find({ key: 'frame' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('the next turn clears the result at once and plays a fresh game', async ($, on) => {
+  const { clock } = world(on)
+  await playAndCut($, 3000)
+  await endTurn($)
+  await $.turn.start({ text: 'again', turnId: 'next' })
+  const idle = await mountIdle($)
+  expect(await resultOf(idle)).toBeUndefined()
+  await idle.unmount()
+  const next = await mountBand($)
+  expect(await next.find({ in: 'game', text: /CLICK TO START/ })).toBeDefined()
+  await next.unmount()
+  // A short turn with no run ends before the first timer: nothing comes back.
+  await clock.advance(5000)
+  await endTurn($)
+  await clock.advance(5000)
+  const after = await mountIdle($)
+  expect(await resultOf(after)).toBeUndefined()
+  await after.unmount()
+})
+
+test('a later result is not cut short by the timer of an earlier one', async ($, on) => {
+  const { clock } = world(on)
+  await playAndCut($, 3000)
+  await endTurn($)
+  await clock.advance(6000)
+  await $.turn.start({ text: '', turnId: 'next' })
+  await playAndCut($, 3000)
+  await endTurn($)
+  await clock.advance(6000)
+  const ui = await mountIdle($)
+  expect(await resultOf(ui)).toBeDefined()
+  await ui.unmount()
+})
+
+test('a turn with no run played ends with no result', async ($, on) => {
+  const { toasts } = world(on)
+  const ui = await mountBand($)
+  await ui.advance(1000)
+  await ui.unmount()
+  await endTurn($)
+  const idle = await mountIdle($)
+  expect(await idle.find({ key: 'frame' })).toBeUndefined()
+  await idle.unmount()
+  expect(toasts).toEqual([])
+})
+
+test('the result yields to a survey, a short band and /wait-jump off', async ($, on) => {
+  world(on)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await playAndCut($, 3000)
+  await endTurn($)
+  for (const ui of [await mountIdle($, 60, 20, true), await mountIdle($, 60, 7)]) {
+    expect(await ui.find({ key: 'frame' })).toBeUndefined()
+    await ui.unmount()
+  }
+  await $.command.run({ command: 'wait-jump', args: '' } as never)
+  const off = await mountIdle($)
+  expect(await off.find({ key: 'frame' })).toBeUndefined()
+  await off.unmount()
+})
+
+test('the turn end settles the run: the next turn starts afresh and keeps the high score', async ($, on) => {
+  world(on)
+  const { score } = await playAndCut($, 3000)
+  await endTurn($)
+  await $.turn.start({ text: '', turnId: 'next' })
   const next = await mountBand($)
   expect(await next.find({ in: 'game', text: /CLICK TO START/ })).toBeDefined()
   expect(await drawnText(next)).toContain(`HI ${pad(score)}`)
@@ -256,30 +375,14 @@ test('the turn end settles the run: a toast names it and the next turn starts af
   expect(await storedBest($)).toBe(score)
 })
 
-test('the turn end names the high score when the run fell short of it', async ($, on) => {
-  const { toasts } = world(on)
-  const seed = await $.ui.mount({ plugin: 'wait-jump', surface: 'terminal', ...band(true) })
-  await seed.post({ best: 213 })
-  await seed.unmount()
-  const { score } = await playAndCut($, 3000)
-  await endTurn($)
-  expect(toasts).toEqual([`SCORE ${String(score).padStart(5, '0')} / HI 00213`])
-})
-
-test('a turn with no run played ends without a toast', async ($, on) => {
-  const { toasts } = world(on)
-  const ui = await mountBand($)
-  await ui.advance(1000)
-  await ui.unmount()
-  await endTurn($)
-  expect(toasts).toEqual([])
-})
-
 test('a subagent turn end leaves the run to resume', async ($, on) => {
   const { toasts } = world(on)
   const { score } = await playAndCut($, 3000)
   await endTurn($, 'agent-1')
   expect(toasts).toEqual([])
+  const idle = await mountIdle($)
+  expect(await resultOf(idle)).toBeUndefined()
+  await idle.unmount()
   const again = await mountBand($)
   expect(await again.find({ in: 'game', text: /PAUSED/ })).toBeDefined()
   expect(await scoreOf(again)).toBe(score)
@@ -309,6 +412,9 @@ test('a post whose game is not a game is not kept', async ($, on) => {
   await ui.post({ epoch: 0, game: { ...game, ...rest, score: null }, best: 0 })
   await ui.unmount()
   await endTurn($)
+  const idle = await mountIdle($)
+  expect(await resultOf(idle)).toBeUndefined()
+  await idle.unmount()
   expect(toasts).toEqual([])
   expect(await storedBest($)).toBe(0)
 })
@@ -331,5 +437,8 @@ test('a band drawn on into the next turn plays that turn afresh and settles it',
   expect(await scoreOf(again)).toBe(score)
   await again.unmount()
   await endTurn($)
-  expect(toasts).toHaveLength(2)
+  const idle = await mountIdle($)
+  expect(await resultOf(idle)).toMatch(new RegExp(`^CLAUDE IS DONE  SCORE ${pad(score)}`))
+  await idle.unmount()
+  expect(toasts).toEqual([])
 })
