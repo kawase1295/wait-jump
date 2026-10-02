@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { FIELD_ROWS, PLAYER_X, frame, newGame, press, step } from './game'
+import { FIELD_ROWS, PLAYER_X, frame, newGame, press, speedOf, step } from './game'
 
 const WIDTH = 60
 
@@ -53,6 +53,33 @@ describe('game', () => {
     let g = { ...press(press(newGame(0, 1))), obstacles: [{ x: PLAYER_X + 3, w: 1, h: 1 }] }
     for (let i = 0; i < 12; i += 1) g = step({ ...g, nextGap: 999 }, WIDTH)
     expect(g.phase).toBe('playing')
+  })
+
+  test('a run ends exactly when the player is drawn on an obstacle cell', async () => {
+    // Field row r of a frame is rows[FIELD_ROWS - r]; rows[0] is the status row.
+    const cellAt = (rows: ReturnType<typeof frame>, row: number) =>
+      rows[FIELD_ROWS - row].map(seg => seg.text).join('')[PLAYER_X]
+    const drawnRow = (rows: ReturnType<typeof frame>) =>
+      Array.from({ length: FIELD_ROWS }, (_, r) => r).find(r => cellAt(rows, r) === '✻')
+
+    // Starts on the ground, so the first tick of the jump (y = 0.76) is checked too.
+    let g = press(press(newGame(0, 1)))
+    let checked = 0
+    do {
+      for (const h of [1, 2]) {
+        // Placed one step ahead so it lands on PLAYER_X during the step.
+        const obstacle = { x: PLAYER_X + speedOf(g.score), w: 1, h }
+        const free = step({ ...g, obstacles: [], nextGap: 999 }, WIDTH)
+        const row = drawnRow(frame({ ...free, obstacles: [{ ...obstacle, x: PLAYER_X }] }, WIDTH))
+        expect(row).toBeDefined()
+        const shared = (row as number) < h
+        const hit = step({ ...g, obstacles: [obstacle], nextGap: 999 }, WIDTH)
+        expect(hit.phase === 'over').toBe(shared)
+        checked += 1
+      }
+      g = step({ ...g, obstacles: [], nextGap: 999 }, WIDTH)
+    } while (g.y > 0)
+    expect(checked).toBeGreaterThan(10)
   })
 
   test('score grows while running and obstacles spawn', async () => {
