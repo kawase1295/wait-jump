@@ -7,6 +7,7 @@ import type { Game } from './game'
 const FALLBACK_COLUMNS = 60
 // While a run leads, its score is posted this often: the band can go away
 // mid-run (a permission prompt, the turn's end) with no chance to post after.
+// So an interrupted run keeps its score as of up to a second before the cut.
 const POST_EVERY_TICKS = 1000 / TICK_MS
 
 const isJumpKey = (key: string) =>
