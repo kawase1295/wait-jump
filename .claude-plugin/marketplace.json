@@ -9,7 +9,7 @@
   "plugins": [
     {
       "name": "wait-jump",
-      "source": "./",
+      "source": { "source": "github", "repo": "kawase1295/wait-jump", "ref": "main" },
       "description": "Claude Jump: a tiny dino-style jump game in the band above the prompt, shown only while Claude is working. Jump the bugs, keep your high score.",
       "category": "fun",
       "author": {

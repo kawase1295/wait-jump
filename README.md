@@ -18,7 +18,7 @@
 /plugin install wait-jump@wait-jump
 ```
 
-To move to a newer commit later, run `/plugin marketplace update wait-jump`.
+The plugin is installed from the released `main` branch. To move to a newer release later, run `/plugin marketplace update wait-jump`.
 
 ## Play
 
