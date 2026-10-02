@@ -13,6 +13,10 @@ const POST_EVERY_TICKS = 1000 / TICK_MS
 const isJumpKey = (key: string) =>
   key === ' ' || key === 'space' || key === 'up' || key === 'return' || key === 'w' || key === 'k'
 
+// Each instance's handler for a new turn, reached from the later calls that
+// bring new props: the clock and input closures hold the game, not `state`.
+const newTurn = new WeakMap<object, (props: JumpProps) => void>()
+
 const start = (props: JumpReady): Game =>
   props.resume === undefined
     ? newGame(props.best, Math.floor(Math.random() * 0x100000000))
@@ -31,7 +35,7 @@ const Jump: ClientModule<JumpProps, Game> = (props, surface) => {
     // band shows a fresh game that takes no input.
     surface.post({ hello: true } satisfies JumpMessage)
   } else if (game === undefined && 'isReady' in props) {
-    const { epoch } = props
+    let { epoch } = props
     let current = start(props)
     let posted = current.best
     let ticksSincePost = 0
@@ -60,8 +64,18 @@ const Jump: ClientModule<JumpProps, Game> = (props, surface) => {
     surface.onPointer(e => {
       if (e.type === 'down') set(press(current))
     })
+    // A band drawn on past the turn's end plays the next turn afresh; that
+    // turn has no run yet, so nothing is posted until it starts one.
+    newTurn.set(surface, next => {
+      if (!('turns' in next) || next.turns <= epoch) return
+      epoch = next.turns
+      current = newGame(Math.max(current.best, current.score, next.best), current.seed)
+      surface.setState(current)
+    })
     surface.setState(current)
     game = current
+  } else {
+    newTurn.get(surface)?.(props)
   }
 
   return (

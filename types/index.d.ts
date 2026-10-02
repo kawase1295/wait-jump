@@ -1,11 +1,12 @@
 import type { Game } from '../hooks/game'
 
 /**
- * What the band draws the game with, and then the hooks module's answer to
- * `hello`: the turn it plays in (`epoch`, a count of settled turns) and the
- * run to resume, if any. Only the answer carries `isReady`.
+ * What the band draws the game with (`turns`: the settled turns, so a band
+ * drawn on into the next turn starts afresh), and the hooks module's answer
+ * to `hello`: the turn it plays in (`epoch`, the same count) and the run to
+ * resume, if any. Only the answer carries `isReady`.
  */
-export type JumpProps = { best: number } | JumpReady
+export type JumpProps = { best: number; turns: number } | JumpReady
 
 export type JumpReady = { best: number; epoch: number; isReady: true; resume?: Game }
 
@@ -26,6 +27,8 @@ declare module 'claude-code' {
        * a post checks the epoch and writes the run in one update.
        */
       run: { epoch: number; game: Game | null }
+      /** The settled turns, as the band reads them while drawing: a new turn draws a new game. */
+      turns: number
     }
   }
 }

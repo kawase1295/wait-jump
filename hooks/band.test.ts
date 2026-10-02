@@ -291,9 +291,33 @@ test('a post whose game is not a game is not kept', async ($, on) => {
   const { toasts } = world(on)
   const ui = await mountBand($)
   await ui.post({ epoch: 0, game: { foo: 1 }, best: 0 })
-  await ui.post({ epoch: 0, game: { ...{ phase: 'playing' }, score: Number.NaN }, best: 0 })
+  const game = { phase: 'playing', y: 0, vy: 0, obstacles: [], distance: 0, best: 0 }
+  const rest = { nextGap: 30, overTicks: 0, resumeTicks: 0, seed: 1 }
+  // JSON carries NaN and Infinity as null.
+  await ui.post({ epoch: 0, game: { ...game, ...rest, score: null }, best: 0 })
   await ui.unmount()
   await endTurn($)
   expect(toasts).toEqual([])
   expect(await storedBest($)).toBe(0)
+})
+
+test('a band drawn on into the next turn plays that turn afresh and settles it', async ($, on) => {
+  const { toasts } = world(on)
+  const ui = await mountBand($)
+  await ui.key({ key: ' ' })
+  await ui.advance(2000)
+  await endTurn($)
+  // Queued prompt: the next turn runs with the band never taken away.
+  await ui.redraw()
+  expect(await ui.find({ in: 'game', text: /CLICK TO START/ })).toBeDefined()
+  await ui.key({ key: ' ' })
+  await ui.advance(2000)
+  const score = await scoreOf(ui)
+  await ui.unmount()
+  const again = await mountBand($)
+  expect(await again.find({ in: 'game', text: /PAUSED/ })).toBeDefined()
+  expect(await scoreOf(again)).toBe(score)
+  await again.unmount()
+  await endTurn($)
+  expect(toasts).toHaveLength(2)
 })

@@ -11,6 +11,8 @@ const run = atom({ plugin: 'wait-jump', key: 'run' } as const, {
   epoch: 0,
   game: null as Game | null,
 })
+// `run.epoch` as drawing reads it: `run` changes every frame, this once a turn.
+const turns = atom({ plugin: 'wait-jump', key: 'turns' } as const, 0)
 
 const BEST_KEY = 'best'
 const ENABLED_KEY = 'isEnabled'
@@ -96,12 +98,16 @@ export const register: Register = on => {
     // update retries its function on a missed version, so the run settled is
     // the one the winning write dropped.
     let settled: Game | null = null
+    let epoch = 0
     await update($, run, held => {
       settled = held.game
-      return { epoch: held.epoch + 1, game: null }
+      epoch = held.epoch + 1
+      return { epoch, game: null }
     })
+    // A band drawn on into the next turn learns of it here and starts afresh.
+    await update($, turns, () => epoch)
     const game = settled as Game | null
-    if (game !== null) {
+    if (game !== null && game.phase !== 'ready') {
       await raiseBest($, Math.max(game.best, game.score))
       $.ui.toast(`SCORE ${pad(game.score)} / HI ${pad(await read($, best))}`)
     }
@@ -132,7 +138,7 @@ export const register: Register = on => {
           <Client
             key="game"
             module="./jump.tsx"
-            props={{ best: await read($, best) } satisfies JumpProps}
+            props={{ best: await read($, best), turns: await read($, turns) } satisfies JumpProps}
             width="100%"
             height={GAME_ROWS}
           />
