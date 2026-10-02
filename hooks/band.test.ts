@@ -44,6 +44,18 @@ test('the game shows only while Claude is working, and plays on every surface', 
   }
 })
 
+test('the full-width space of a Japanese IME starts the run like Space', async ($, on) => {
+  world(on)
+  const ui = await $.ui.mount({ plugin: 'wait-jump', surface: 'terminal', ...band(true) })
+  await ui.resize({ columns: 60, rows: 6 })
+  expect(await ui.find({ in: 'game', text: /CLICK TO START/ })).toBeDefined()
+
+  await ui.key({ key: '\u3000' })
+  await ui.advance(500)
+  expect(await ui.find({ in: 'game', text: /CLICK TO START/ })).toBeUndefined()
+  await ui.unmount()
+})
+
 test('a run ending above the best score is stored across sessions', async ($, on) => {
   world(on)
   const ui = await $.ui.mount({ plugin: 'wait-jump', surface: 'terminal', ...band(true) })

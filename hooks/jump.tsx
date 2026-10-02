@@ -10,8 +10,15 @@ const FALLBACK_COLUMNS = 60
 // So an interrupted run keeps its score as of up to a second before the cut.
 const POST_EVERY_TICKS = 1000 / TICK_MS
 
+// A Japanese IME in hiragana mode sends Space as the full-width space U+3000.
 const isJumpKey = (key: string) =>
-  key === ' ' || key === 'space' || key === 'up' || key === 'return' || key === 'w' || key === 'k'
+  key === ' ' ||
+  key === '\u3000' ||
+  key === 'space' ||
+  key === 'up' ||
+  key === 'return' ||
+  key === 'w' ||
+  key === 'k'
 
 // Runs on the drawing thread: owns the frame clock and input, and posts the
 // best score to the hooks module while a run leads and when it ends above it.
