@@ -18,7 +18,12 @@
 /plugin install wait-jump@wait-jump
 ```
 
-The plugin is installed from the released `main` branch. To move to a newer release later, run `/plugin marketplace update wait-jump`.
+The plugin is installed over HTTPS from the released `main` branch. To move to a newer release later, refresh the catalog and then update the plugin, and restart Claude Code:
+
+```
+/plugin marketplace update wait-jump
+claude plugin update wait-jump@wait-jump
+```
 
 ## Play
 
