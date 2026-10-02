@@ -91,3 +91,16 @@ test('the band hides when it lacks the rows for the framed game', async ($, on) 
   expect(await short.find({ key: 'game' })).toBeUndefined()
   await short.unmount()
 })
+
+test('the game keeps what the mods beneath draw, with the game first', async ($, on) => {
+  mock.store(on)
+  on('ui.render', () => ({ type: 'Text', props: {}, children: ['beneath'] }))
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount({ plugin: 'wait-jump', surface, ...band(true, 100) })
+    expect(await ui.find({ key: 'game' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'beneath' })).toBeDefined()
+    const drawn = JSON.stringify(await ui.drawn())
+    expect(drawn.indexOf('"frame"')).toBeLessThan(drawn.indexOf('beneath'))
+    await ui.unmount()
+  }
+})
