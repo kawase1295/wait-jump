@@ -1,4 +1,4 @@
-import type { Game } from '../hooks/game'
+import type { Game, Result } from '../hooks/game'
 
 /**
  * What the band draws the game with (`turns`: the settled turns, so a band
@@ -27,6 +27,8 @@ declare module 'claude-code' {
        * a post checks the epoch and writes the run in one update.
        */
       run: { epoch: number; game: Game | null }
+      /** The run the last turn settled, shown in the band until the timer or the next turn clears it. */
+      result: Result | null
       /** The settled turns, as the band reads them while drawing: a new turn draws a new game. */
       turns: number
     }

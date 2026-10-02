@@ -5,9 +5,11 @@ import {
   PLAYER_X,
   RESUME_TICKS,
   frame,
+  hasSetBest,
   newGame,
   pause,
   press,
+  resultFrame,
   speedOf,
   step,
 } from './game'
@@ -159,5 +161,30 @@ describe('game', () => {
     expect(pause(over)).toBe(over)
     const paused = pause(press(newGame(0, 1)))
     expect(pause(run(paused, 5)).resumeTicks).toBe(RESUME_TICKS)
+  })
+
+  test('a run sets the high score only by passing the one it started under', async () => {
+    const playing = run(press(newGame(0, 7)), 40)
+    expect(hasSetBest(playing)).toBe(true)
+    expect(hasSetBest(pause(playing))).toBe(true)
+    expect(hasSetBest({ ...playing, best: playing.score })).toBe(false)
+    const crash = (g: ReturnType<typeof newGame>) =>
+      step({ ...g, obstacles: [{ x: PLAYER_X, w: 1, h: 1 }] }, WIDTH)
+    expect(hasSetBest(crash(playing))).toBe(true)
+    expect(hasSetBest(crash({ ...playing, best: 999 }))).toBe(false)
+    // A run that ends at once at 0 sets nothing, even under a best of 0.
+    expect(hasSetBest(crash(press(newGame(0, 1))))).toBe(false)
+  })
+
+  test('the result frame keeps the game frame and names the score in the field', async () => {
+    const lines = (rows: ReturnType<typeof resultFrame>) => rows.map(row => row.map(seg => seg.text).join(''))
+    const rows = resultFrame({ score: 87, best: 213, isNewBest: false }, WIDTH)
+    expect(rows).toHaveLength(FIELD_ROWS + 2)
+    for (const line of lines(rows)) expect(line.length).toBe(WIDTH)
+    expect(lines(rows)[0]).toMatch(/^✻ Claude Jump +HI 00213  00087$/)
+    expect(lines(rows)[2]?.trim()).toBe('CLAUDE IS DONE  SCORE 00087')
+    expect(lines(rows)[FIELD_ROWS + 1]).toBe('─'.repeat(WIDTH))
+    const best = lines(resultFrame({ score: 300, best: 300, isNewBest: true }, WIDTH))
+    expect(best[2]?.trim()).toBe('CLAUDE IS DONE  SCORE 00300  NEW HI')
   })
 })
