@@ -1,3 +1,53 @@
 # wait-jump
 
-Claude Jump: a tiny jump game above the Claude Code prompt while Claude is working.
+**Claude Jump**: a tiny jump game for Claude Code, in the spirit of the browser's offline dino. While Claude is working, a band above the prompt lets you jump `✻` over bugs (`#`) until the answer lands.
+
+```
+✻ Claude Jump                                  HI 00213  00087
+
+
+     ✻
+                     #                    ##
+──────────────────────────────────────────────────────────────
+```
+
+## Install
+
+```
+/plugin marketplace add kawase1295/wait-jump
+/plugin install wait-jump@wait-jump
+```
+
+To move to a newer commit later, run `/plugin marketplace update wait-jump`.
+
+## Play
+
+- The band appears only while a turn is running, and goes away when Claude is done.
+- Click the band to give it the keyboard, then press **Space**, **Up**, **Enter**, `w` or `k` (or click again) to jump. **Esc** hands the keys back to the prompt.
+- The game speeds up as your score grows. The high score is kept across sessions.
+- `/wait-jump` turns the game off and on (remembered across sessions).
+
+The band needs 6 rows; on a shorter terminal it stays hidden.
+
+## Requirements
+
+- Claude Code with function-hook mods (2.1.287 or later). The mod API is in early access and may change between releases.
+- A surface that draws `Client` regions: the terminal or the desktop app.
+
+## How it works
+
+- `hooks/game.ts` is the pure game: physics, collisions, obstacle spawning and the frame as colored rows. It owns no clock or input, so it is tested directly.
+- `hooks/jump.tsx` is the `Client` surface module on the drawing thread: a 50 ms frame clock, key and pointer input, and a post of the best score when a run ends.
+- `hooks/register.tsx` draws the `AbovePrompt` band while `isWorking`, stores the high score and the on/off switch in `$.store`, and registers `/wait-jump`.
+
+The plugin is named `wait-jump` because plugin names starting with `claude-` are reserved; the game itself is still called Claude Jump.
+
+## Development
+
+```
+scripts/check   # claude plugin validate . && claude plugin test .
+```
+
+## License
+
+MIT
