@@ -1,0 +1,25 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "wait-jump",
+  "description": "Claude Jump for Claude Code",
+  "owner": {
+    "name": "kawase1295",
+    "url": "https://github.com/kawase1295"
+  },
+  "plugins": [
+    {
+      "name": "wait-jump",
+      "source": "./",
+      "description": "Claude Jump: a tiny dino-style jump game in the band above the prompt, shown only while Claude is working. Jump the bugs, keep your high score.",
+      "category": "fun",
+      "author": {
+        "name": "kawase1295",
+        "url": "https://github.com/kawase1295"
+      },
+      "homepage": "https://github.com/kawase1295/wait-jump",
+      "repository": "https://github.com/kawase1295/wait-jump",
+      "license": "MIT",
+      "keywords": ["game", "fun", "waiting", "mod"]
+    }
+  ]
+}
