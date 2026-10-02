@@ -58,6 +58,55 @@ test('a run ending above the best score is stored across sessions', async ($, on
   await again.unmount()
 })
 
+// Starts a run and lets it go on for `ms`, then takes the band away mid-run,
+// as a permission prompt or the turn's end does. The first obstacle needs
+// about 6 seconds to reach the player, so a shorter run never ends on its own.
+const interruptedRun = async ($: Parameters<Parameters<typeof test>[1]>[0], ms: number) => {
+  const ui = await $.ui.mount({ plugin: 'wait-jump', surface: 'terminal', ...band(true) })
+  await ui.resize({ columns: 60, rows: 6 })
+  await ui.key({ key: ' ' })
+  await ui.advance(ms)
+  expect(await ui.find({ in: 'game', text: /GAME OVER/ })).toBeUndefined()
+  await ui.unmount()
+}
+
+const storedBest = async ($: Parameters<Parameters<typeof test>[1]>[0]) => {
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'wait-jump', surface: 'terminal', ...band(true) })
+  await ui.resize({ columns: 60, rows: 6 })
+  const hi = await ui.find({ in: 'game', text: /HI \d{5}/ })
+  await ui.unmount()
+  return Number(/HI (\d{5})/.exec(JSON.stringify(hi))?.[1])
+}
+
+test('a run cut off above the best score still raises it', async ($, on) => {
+  world(on)
+  const seed = await $.ui.mount({ plugin: 'wait-jump', surface: 'terminal', ...band(true) })
+  await seed.post({ best: 10 })
+  await seed.unmount()
+  await interruptedRun($, 3000)
+  expect(await storedBest($)).toBeGreaterThan(10)
+})
+
+test('a run cut off long after taking the lead keeps more than its lead', async ($, on) => {
+  world(on)
+  const seed = await $.ui.mount({ plugin: 'wait-jump', surface: 'terminal', ...band(true) })
+  await seed.post({ best: 10 })
+  await seed.unmount()
+  // The lead is posted at 11; the score runs to about 27 by 6 seconds.
+  await interruptedRun($, 6000)
+  expect(await storedBest($)).toBeGreaterThan(20)
+})
+
+test('a run cut off below the best score leaves it as it was', async ($, on) => {
+  world(on)
+  const seed = await $.ui.mount({ plugin: 'wait-jump', surface: 'terminal', ...band(true) })
+  await seed.post({ best: 123 })
+  await seed.unmount()
+  await interruptedRun($, 3000)
+  expect(await storedBest($)).toBe(123)
+})
+
 test('/wait-jump toggles the game off and on', async ($, on) => {
   world(on)
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
