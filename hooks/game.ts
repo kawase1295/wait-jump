@@ -68,10 +68,13 @@ export const press = (g: Game): Game => {
   return { ...g, vy: JUMP_V }
 }
 
-const collides = (g: Game, y: number, obstacles: Obstacle[]) =>
+/** The field row the player occupies: drawing and collision both use it. */
+const playerRow = (y: number) => Math.min(FIELD_ROWS - 1, Math.round(y))
+
+const collides = (y: number, obstacles: Obstacle[]) =>
   obstacles.some(o => {
     const left = Math.round(o.x)
-    return PLAYER_X >= left && PLAYER_X < left + o.w && y < o.h
+    return PLAYER_X >= left && PLAYER_X < left + o.w && playerRow(y) < o.h
   })
 
 const spawn = (g: Game, obstacles: Obstacle[], width: number) => {
@@ -111,7 +114,7 @@ export const step = (g: Game, width: number): Game => {
   const distance = g.distance + speed
   const score = Math.floor(distance / 2)
 
-  if (collides(g, y, moved)) {
+  if (collides(y, moved)) {
     return {
       ...g,
       phase: 'over',
@@ -150,7 +153,7 @@ export const frame = (g: Game, width: number): Segment[][] => {
     ),
   )
 
-  const playerRow = Math.min(FIELD_ROWS - 1, Math.round(g.y))
+  const player = playerRow(g.y)
   // ASCII only: every character must take exactly one cell.
   const message =
     g.phase === 'ready'
@@ -169,7 +172,7 @@ export const frame = (g: Game, width: number): Segment[][] => {
         if (x >= 0 && x < cols) cells[x] = { text: '#', color: BUG, bold: true }
       }
     }
-    if (row === playerRow && PLAYER_X < cols) {
+    if (row === player && PLAYER_X < cols) {
       cells[PLAYER_X] = { text: g.phase === 'over' ? '✕' : '✻', color: CLAUDE, bold: true }
     }
     if (row === FIELD_ROWS - 1 && message !== '') {
