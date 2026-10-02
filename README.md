@@ -27,7 +27,7 @@ To move to a newer commit later, run `/plugin marketplace update wait-jump`.
 - The game speeds up as your score grows. The high score is kept across sessions.
 - `/wait-jump` turns the game off and on (remembered across sessions).
 
-The band needs 6 rows; on a shorter terminal it stays hidden.
+The game is framed and drawn at most 80 columns wide, so a fullscreen band does not stretch it across the terminal. It needs 8 rows; on a shorter terminal it stays hidden.
 
 ## Requirements
 
