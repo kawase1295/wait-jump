@@ -1,10 +1,18 @@
 import { atom, read, update } from 'claude-code'
-import type { Register } from 'claude-code'
+import type { EngineInterface, Register } from 'claude-code'
 
-import { FIELD_ROWS } from './game'
+import type { JumpMessage, JumpProps, JumpReady } from '../types'
+import { FIELD_ROWS, isGame } from './game'
+import type { Game } from './game'
 
 const best = atom({ plugin: 'wait-jump', key: 'best' } as const, 0)
 const isEnabled = atom({ plugin: 'wait-jump', key: 'isEnabled' } as const, true)
+const run = atom({ plugin: 'wait-jump', key: 'run' } as const, {
+  epoch: 0,
+  game: null as Game | null,
+})
+// `run.epoch` as drawing reads it: `run` changes every frame, this once a turn.
+const turns = atom({ plugin: 'wait-jump', key: 'turns' } as const, 0)
 
 const BEST_KEY = 'best'
 const ENABLED_KEY = 'isEnabled'
@@ -14,10 +22,23 @@ const FRAME_ROWS = GAME_ROWS + 2
 // A fullscreen band spans the whole terminal; past this the field is too long to play.
 const MAX_COLUMNS = 80
 
-const isBestMessage = (data: unknown): data is { best: number } =>
-  typeof data === 'object' &&
-  data !== null &&
-  typeof (data as { best?: unknown }).best === 'number'
+const isObject = (data: unknown): data is Record<string, unknown> =>
+  typeof data === 'object' && data !== null
+
+const isMessage = (data: unknown): data is JumpMessage =>
+  isObject(data) &&
+  (data.hello === true ||
+    (data.hello === undefined &&
+      Number.isFinite(data.best) &&
+      (data.game === undefined || (Number.isFinite(data.epoch) && isGame(data.game)))))
+
+const pad = (n: number) => String(n).padStart(5, '0')
+
+async function raiseBest($: EngineInterface, score: number) {
+  if (!Number.isFinite(score) || score <= (await read($, best))) return
+  await update($, best, n => Math.max(n, score))
+  await $.store.set(BEST_KEY, score)
+}
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
@@ -46,14 +67,52 @@ export const register: Register = on => {
   })
 
   on('ui.message', async ($, e, next) => {
-    if (!isBestMessage(e.data)) return next(e)
-    const score = e.data.best
-    if (score > (await read($, best))) {
-      await update($, best, n => Math.max(n, score))
-      await $.store.set(BEST_KEY, score)
+    const message = e.data
+    if (!isMessage(message)) return next(e)
+    // A band mounting asks for the run to resume: read here, not while
+    // drawing, so the snapshot written every frame redraws nothing.
+    if ('hello' in message) {
+      const { epoch, game } = await read($, run)
+      const props: JumpReady = {
+        best: await read($, best),
+        epoch,
+        isReady: true,
+        ...(game === null ? {} : { resume: game }),
+      }
+      return { props }
+    }
+    await raiseBest($, message.best)
+    if ('game' in message) {
+      // A post from a settled turn's band carries its old epoch: drop it.
+      await update($, run, held =>
+        held.epoch === message.epoch ? { ...held, game: message.game } : held,
+      )
     }
 
     return {}
+  })
+
+  // A prompt mid-turn raises no turn.complete, so its run stays to resume.
+  on('turn.complete', async ($, e, next) => {
+    if (e.agentId !== undefined) return next(e)
+    // update retries its function on a missed version, so the run settled is
+    // the one the winning write dropped.
+    let settled: Game | null = null
+    let epoch = 0
+    await update($, run, held => {
+      settled = held.game
+      epoch = held.epoch + 1
+      return { epoch, game: null }
+    })
+    // A band drawn on into the next turn learns of it here and starts afresh.
+    await update($, turns, () => epoch)
+    const game = settled as Game | null
+    if (game !== null && game.phase !== 'ready') {
+      await raiseBest($, Math.max(game.best, game.score))
+      $.ui.toast(`SCORE ${pad(game.score)} / HI ${pad(await read($, best))}`)
+    }
+
+    return next(e)
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
@@ -79,7 +138,7 @@ export const register: Register = on => {
           <Client
             key="game"
             module="./jump.tsx"
-            props={{ best: await read($, best) }}
+            props={{ best: await read($, best), turns: await read($, turns) } satisfies JumpProps}
             width="100%"
             height={GAME_ROWS}
           />

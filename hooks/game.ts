@@ -3,7 +3,7 @@
 
 export type Obstacle = { x: number; w: number; h: number }
 
-export type Phase = 'ready' | 'playing' | 'over'
+export type Phase = 'ready' | 'playing' | 'paused' | 'over'
 
 export type Game = {
   phase: Phase
@@ -19,6 +19,8 @@ export type Game = {
   nextGap: number
   /** Ticks spent since the run ended. */
   overTicks: number
+  /** Ticks left before a paused run plays on. */
+  resumeTicks: number
   seed: number
 }
 
@@ -27,6 +29,8 @@ export type Segment = { text: string; color?: string; dim?: boolean; bold?: bool
 export const FIELD_ROWS = 4
 export const PLAYER_X = 4
 export const TICK_MS = 50
+/** A resumed run waits this long (or for a press) before it plays on. */
+export const RESUME_TICKS = 3000 / TICK_MS
 
 const GRAVITY = 0.12
 const JUMP_V = 0.88
@@ -52,13 +56,43 @@ export const newGame = (best: number, seed: number): Game => ({
   best,
   nextGap: 30,
   overTicks: 0,
+  resumeTicks: 0,
   seed: seed >>> 0,
 })
 
+const PHASES: readonly Phase[] = ['ready', 'playing', 'paused', 'over']
+const isCount = (n: unknown) => typeof n === 'number' && Number.isFinite(n)
+
+/** Whether posted data is a game this module drew: input to check, not a fact. */
+export const isGame = (data: unknown): data is Game => {
+  if (typeof data !== 'object' || data === null) return false
+  const g = data as Record<string, unknown>
+  return (
+    PHASES.includes(g.phase as Phase) &&
+    ['y', 'vy', 'distance', 'score', 'best', 'nextGap', 'overTicks', 'resumeTicks', 'seed'].every(
+      key => isCount(g[key]),
+    ) &&
+    Array.isArray(g.obstacles) &&
+    g.obstacles.every(
+      (o: unknown) =>
+        typeof o === 'object' &&
+        o !== null &&
+        ['x', 'w', 'h'].every(key => isCount((o as Record<string, unknown>)[key])),
+    )
+  )
+}
+
 const isOnGround = (g: Game) => g.y === 0 && g.vy === 0
+
+/** Holds a run still; it plays on after the countdown or at the next press. */
+export const pause = (g: Game): Game =>
+  g.phase === 'playing' || g.phase === 'paused'
+    ? { ...g, phase: 'paused', resumeTicks: RESUME_TICKS }
+    : g
 
 export const press = (g: Game): Game => {
   if (g.phase === 'ready') return { ...g, phase: 'playing' }
+  if (g.phase === 'paused') return { ...g, phase: 'playing', resumeTicks: 0 }
   if (g.phase === 'over') {
     if (g.overTicks < RESTART_COOLDOWN) return g
     return { ...newGame(g.best, g.seed), phase: 'playing' }
@@ -68,10 +102,13 @@ export const press = (g: Game): Game => {
   return { ...g, vy: JUMP_V }
 }
 
-const collides = (g: Game, y: number, obstacles: Obstacle[]) =>
+/** The field row the player occupies: drawing and collision both use it. */
+const playerRow = (y: number) => Math.min(FIELD_ROWS - 1, Math.round(y))
+
+const collides = (y: number, obstacles: Obstacle[]) =>
   obstacles.some(o => {
     const left = Math.round(o.x)
-    return PLAYER_X >= left && PLAYER_X < left + o.w && y < o.h
+    return PLAYER_X >= left && PLAYER_X < left + o.w && playerRow(y) < o.h
   })
 
 const spawn = (g: Game, obstacles: Obstacle[], width: number) => {
@@ -93,6 +130,10 @@ const spawn = (g: Game, obstacles: Obstacle[], width: number) => {
 
 export const step = (g: Game, width: number): Game => {
   if (g.phase === 'ready') return g
+  if (g.phase === 'paused') {
+    const resumeTicks = g.resumeTicks - 1
+    return resumeTicks > 0 ? { ...g, resumeTicks } : { ...g, phase: 'playing', resumeTicks: 0 }
+  }
   // Once restart is allowed nothing changes, so the drawing stops redrawing.
   if (g.phase === 'over') {
     return g.overTicks >= RESTART_COOLDOWN ? g : { ...g, overTicks: g.overTicks + 1 }
@@ -111,7 +152,7 @@ export const step = (g: Game, width: number): Game => {
   const distance = g.distance + speed
   const score = Math.floor(distance / 2)
 
-  if (collides(g, y, moved)) {
+  if (collides(y, moved)) {
     return {
       ...g,
       phase: 'over',
@@ -150,14 +191,16 @@ export const frame = (g: Game, width: number): Segment[][] => {
     ),
   )
 
-  const playerRow = Math.min(FIELD_ROWS - 1, Math.round(g.y))
+  const player = playerRow(g.y)
   // ASCII only: every character must take exactly one cell.
   const message =
     g.phase === 'ready'
       ? 'SPACE / UP / CLICK TO START'
-      : g.phase === 'over'
-        ? 'GAME OVER  SPACE TO RETRY'
-        : ''
+      : g.phase === 'paused'
+        ? `PAUSED  RESUME IN ${Math.ceil((g.resumeTicks * TICK_MS) / 1000)}`
+        : g.phase === 'over'
+          ? 'GAME OVER  SPACE TO RETRY'
+          : ''
 
   for (let row = FIELD_ROWS - 1; row >= 0; row -= 1) {
     const cells: Segment[] = Array.from({ length: cols }, () => ({ text: ' ' }))
@@ -169,7 +212,7 @@ export const frame = (g: Game, width: number): Segment[][] => {
         if (x >= 0 && x < cols) cells[x] = { text: '#', color: BUG, bold: true }
       }
     }
-    if (row === playerRow && PLAYER_X < cols) {
+    if (row === player && PLAYER_X < cols) {
       cells[PLAYER_X] = { text: g.phase === 'over' ? '✕' : '✻', color: CLAUDE, bold: true }
     }
     if (row === FIELD_ROWS - 1 && message !== '') {
