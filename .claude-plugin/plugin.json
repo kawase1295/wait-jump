@@ -1,0 +1,10 @@
+{
+  "name": "wait-jump",
+  "description": "Claude Jump: a tiny dino-style jump game in the band above the prompt while Claude is working",
+  "author": { "name": "kawase1295", "url": "https://github.com/kawase1295" },
+  "homepage": "https://github.com/kawase1295/wait-jump",
+  "repository": "https://github.com/kawase1295/wait-jump",
+  "license": "MIT",
+  "keywords": ["game", "fun", "waiting", "mod"],
+  "types": "./types/index.d.ts"
+}
