@@ -186,24 +186,31 @@ const endTurn = ($: Engine, agentId?: string) =>
     ...(agentId === undefined ? {} : { agentId }),
   })
 
+// The rows that hold an obstacle, as drawn.
+const obstaclesOf = async (ui: Awaited<ReturnType<typeof mountBand>>) =>
+  (await ui.findAll({ in: 'game', type: 'Text', text: /#/ })).map(row => row.text)
+
 // Plays a run for `ms` and takes the band away mid-run, as a prompt does.
 const playAndCut = async ($: Engine, ms: number) => {
   const ui = await mountBand($)
   await ui.key({ key: ' ' })
   await ui.advance(ms)
   const score = await scoreOf(ui)
+  const obstacles = await obstaclesOf(ui)
   await ui.unmount()
-  return score
+  return { score, obstacles }
 }
 
 test('a run cut off mid-turn comes back paused with its score, then plays on', async ($, on) => {
   world(on)
-  const score = await playAndCut($, 3000)
+  const { score, obstacles } = await playAndCut($, 3000)
   expect(score).toBeGreaterThan(0)
+  expect(obstacles.length).toBeGreaterThan(0)
 
   const again = await mountBand($)
   expect(await again.find({ in: 'game', text: /PAUSED/ })).toBeDefined()
   expect(await scoreOf(again)).toBe(score)
+  expect(await obstaclesOf(again)).toEqual(obstacles)
   await again.advance(2900)
   expect(await scoreOf(again)).toBe(score)
   await again.advance(1000)
@@ -214,7 +221,7 @@ test('a run cut off mid-turn comes back paused with its score, then plays on', a
 
 test('a key press resumes a paused run before the countdown ends', async ($, on) => {
   world(on)
-  const score = await playAndCut($, 3000)
+  const { score } = await playAndCut($, 3000)
   const again = await mountBand($)
   await again.key({ key: ' ' })
   await again.advance(500)
@@ -225,7 +232,7 @@ test('a key press resumes a paused run before the countdown ends', async ($, on)
 
 test('the turn end settles the run: a toast names it and the next turn starts afresh', async ($, on) => {
   const { toasts } = world(on)
-  const score = await playAndCut($, 3000)
+  const { score } = await playAndCut($, 3000)
   await endTurn($)
   const pad = (n: number) => String(n).padStart(5, '0')
   expect(toasts).toEqual([`SCORE ${pad(score)} / HI ${pad(score)}`])
@@ -242,7 +249,7 @@ test('the turn end names the high score when the run fell short of it', async ($
   const seed = await $.ui.mount({ plugin: 'wait-jump', surface: 'terminal', ...band(true) })
   await seed.post({ best: 213 })
   await seed.unmount()
-  const score = await playAndCut($, 3000)
+  const { score } = await playAndCut($, 3000)
   await endTurn($)
   expect(toasts).toEqual([`SCORE ${String(score).padStart(5, '0')} / HI 00213`])
 })
@@ -258,7 +265,7 @@ test('a turn with no run played ends without a toast', async ($, on) => {
 
 test('a subagent turn end leaves the run to resume', async ($, on) => {
   const { toasts } = world(on)
-  const score = await playAndCut($, 3000)
+  const { score } = await playAndCut($, 3000)
   await endTurn($, 'agent-1')
   expect(toasts).toEqual([])
   const again = await mountBand($)
@@ -278,4 +285,15 @@ test('a band still drawn after the turn end does not carry its run into the next
   const next = await mountBand($)
   expect(await next.find({ in: 'game', text: /CLICK TO START/ })).toBeDefined()
   await next.unmount()
+})
+
+test('a post whose game is not a game is not kept', async ($, on) => {
+  const { toasts } = world(on)
+  const ui = await mountBand($)
+  await ui.post({ epoch: 0, game: { foo: 1 }, best: 0 })
+  await ui.post({ epoch: 0, game: { ...{ phase: 'playing' }, score: Number.NaN }, best: 0 })
+  await ui.unmount()
+  await endTurn($)
+  expect(toasts).toEqual([])
+  expect(await storedBest($)).toBe(0)
 })

@@ -20,9 +20,12 @@ declare module 'claude-code' {
     'wait-jump': {
       best: number
       isEnabled: boolean
-      epoch: number
-      /** The run the band last showed this turn, kept to resume after a prompt. */
-      snapshot: Game | null
+      /**
+       * The turn the band plays in (`epoch`, a count of settled turns) and the
+       * run it last showed in it, kept to resume after a prompt. One value, so
+       * a post checks the epoch and writes the run in one update.
+       */
+      run: { epoch: number; game: Game | null }
     }
   }
 }

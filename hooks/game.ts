@@ -60,6 +60,28 @@ export const newGame = (best: number, seed: number): Game => ({
   seed: seed >>> 0,
 })
 
+const PHASES: readonly Phase[] = ['ready', 'playing', 'paused', 'over']
+const isCount = (n: unknown) => typeof n === 'number' && Number.isFinite(n)
+
+/** Whether posted data is a game this module drew: input to check, not a fact. */
+export const isGame = (data: unknown): data is Game => {
+  if (typeof data !== 'object' || data === null) return false
+  const g = data as Record<string, unknown>
+  return (
+    PHASES.includes(g.phase as Phase) &&
+    ['y', 'vy', 'distance', 'score', 'best', 'nextGap', 'overTicks', 'resumeTicks', 'seed'].every(
+      key => isCount(g[key]),
+    ) &&
+    Array.isArray(g.obstacles) &&
+    g.obstacles.every(
+      (o: unknown) =>
+        typeof o === 'object' &&
+        o !== null &&
+        ['x', 'w', 'h'].every(key => isCount((o as Record<string, unknown>)[key])),
+    )
+  )
+}
+
 const isOnGround = (g: Game) => g.y === 0 && g.vy === 0
 
 /** Holds a run still; it plays on after the countdown or at the next press. */
