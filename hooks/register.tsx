@@ -64,22 +64,27 @@ export const register: Register = on => {
     const table = $.ui.resolve(e)
     if (!('Client' in table)) return next(e)
     const { Box, Client } = table
+    // Other mods beneath draw in the same band: keep theirs, below the game.
+    const below = await next(e)
 
     return (
-      <Box
-        key="frame"
-        borderStyle="round"
-        borderDimColor
-        width={Math.min(bodyColumns, MAX_COLUMNS)}
-        height={FRAME_ROWS}
-      >
-        <Client
-          key="game"
-          module="./jump.tsx"
-          props={{ best: await read($, best) }}
-          width="100%"
-          height={GAME_ROWS}
-        />
+      <Box flexDirection="column">
+        <Box
+          key="frame"
+          borderStyle="round"
+          borderDimColor
+          width={Math.min(bodyColumns, MAX_COLUMNS)}
+          height={FRAME_ROWS}
+        >
+          <Client
+            key="game"
+            module="./jump.tsx"
+            props={{ best: await read($, best) }}
+            width="100%"
+            height={GAME_ROWS}
+          />
+        </Box>
+        {below}
       </Box>
     )
   })
