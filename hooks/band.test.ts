@@ -50,7 +50,7 @@ test('the full-width space of a Japanese IME starts the run like Space', async (
   await ui.resize({ columns: 60, rows: 6 })
   expect(await ui.find({ in: 'game', text: /CLICK TO START/ })).toBeDefined()
 
-  await ui.key({ key: '　' })
+  await ui.key({ key: '\u3000' })
   await ui.advance(500)
   expect(await ui.find({ in: 'game', text: /CLICK TO START/ })).toBeUndefined()
   await ui.unmount()

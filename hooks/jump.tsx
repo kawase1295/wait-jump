@@ -13,7 +13,7 @@ const POST_EVERY_TICKS = 1000 / TICK_MS
 // A Japanese IME in hiragana mode sends Space as the full-width space U+3000.
 const isJumpKey = (key: string) =>
   key === ' ' ||
-  key === '　' ||
+  key === '\u3000' ||
   key === 'space' ||
   key === 'up' ||
   key === 'return' ||
