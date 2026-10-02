@@ -10,13 +10,13 @@ const world = (on: On) => {
   on('session.start', ($, e) => ({ cwd: e.cwd }))
 }
 
-const band = (isWorking: boolean) => ({
+const band = (isWorking: boolean, bodyColumns = 60, maxRows = 20) => ({
   component: 'AbovePrompt' as const,
   props: {
     hasSurvey: false,
     isWorking,
-    maxRows: 20,
-    bodyColumns: 60,
+    maxRows,
+    bodyColumns,
     scroll: { offset: 0, bodyRows: 19, totalRows: 0 },
     view: {},
   },
@@ -68,4 +68,26 @@ test('/wait-jump toggles the game off and on', async ($, on) => {
   await ui.unmount()
   const onRun = await $.command.run({ command: 'wait-jump', args: '' } as never)
   expect(onRun.text).toContain('有効')
+})
+
+test('a wide band draws the game framed and at most 80 columns wide', async ($, on) => {
+  world(on)
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const wide = await $.ui.mount({ plugin: 'wait-jump', surface, ...band(true, 200) })
+    const frame = await wide.find({ key: 'frame' })
+    expect(frame?.props.width).toBe(80)
+    expect(frame?.props.borderStyle).toBe('round')
+    await wide.unmount()
+
+    const narrow = await $.ui.mount({ plugin: 'wait-jump', surface, ...band(true, 50) })
+    expect((await narrow.find({ key: 'frame' }))?.props.width).toBe(50)
+    await narrow.unmount()
+  }
+})
+
+test('the band hides when it lacks the rows for the framed game', async ($, on) => {
+  world(on)
+  const short = await $.ui.mount({ plugin: 'wait-jump', surface: 'terminal', ...band(true, 60, 7) })
+  expect(await short.find({ key: 'game' })).toBeUndefined()
+  await short.unmount()
 })

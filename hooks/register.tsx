@@ -9,6 +9,10 @@ const isEnabled = atom({ plugin: 'wait-jump', key: 'isEnabled' } as const, true)
 const BEST_KEY = 'best'
 const ENABLED_KEY = 'isEnabled'
 const GAME_ROWS = FIELD_ROWS + 2
+// The frame's border takes one row or column on each side.
+const FRAME_ROWS = GAME_ROWS + 2
+// A fullscreen band spans the whole terminal; past this the field is too long to play.
+const MAX_COLUMNS = 80
 
 const isBestMessage = (data: unknown): data is { best: number } =>
   typeof data === 'object' &&
@@ -53,22 +57,30 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    const { hasSurvey, isWorking, maxRows } = e.props
-    if (hasSurvey || !isWorking || maxRows < GAME_ROWS || !(await read($, isEnabled))) {
+    const { hasSurvey, isWorking, maxRows, bodyColumns } = e.props
+    if (hasSurvey || !isWorking || maxRows < FRAME_ROWS || !(await read($, isEnabled))) {
       return next(e)
     }
     const table = $.ui.resolve(e)
     if (!('Client' in table)) return next(e)
-    const { Client } = table
+    const { Box, Client } = table
 
     return (
-      <Client
-        key="game"
-        module="./jump.tsx"
-        props={{ best: await read($, best) }}
-        width="100%"
-        height={GAME_ROWS}
-      />
+      <Box
+        key="frame"
+        borderStyle="round"
+        borderDimColor
+        width={Math.min(bodyColumns, MAX_COLUMNS)}
+        height={FRAME_ROWS}
+      >
+        <Client
+          key="game"
+          module="./jump.tsx"
+          props={{ best: await read($, best) }}
+          width="100%"
+          height={GAME_ROWS}
+        />
+      </Box>
     )
   })
 }
