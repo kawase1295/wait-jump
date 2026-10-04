@@ -1,4 +1,31 @@
-import type { Game, Result } from '../hooks/game'
+// The contract must be self-contained, so the game's shapes live here and
+// hooks/game.ts takes them from this file.
+
+export type Obstacle = { x: number; w: number; h: number }
+
+export type Phase = 'ready' | 'playing' | 'paused' | 'over'
+
+export type Game = {
+  phase: Phase
+  /** Height above the ground, in rows. */
+  y: number
+  vy: number
+  obstacles: Obstacle[]
+  /** Distance run, in columns. */
+  distance: number
+  score: number
+  best: number
+  /** Columns to leave after the last obstacle before the next one. */
+  nextGap: number
+  /** Ticks spent since the run ended. */
+  overTicks: number
+  /** Ticks left before a paused run plays on. */
+  resumeTicks: number
+  seed: number
+}
+
+/** A settled run: its score, the high score after it, and whether it set that. */
+export type Result = { score: number; best: number; isNewBest: boolean }
 
 /**
  * What the band draws the game with (`turns`: the settled turns, so a band
