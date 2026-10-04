@@ -1,28 +1,9 @@
 // Pure game logic: every function takes a Game and returns a new one.
 // The surface module (jump.tsx) owns the clock and input; nothing here does.
 
-export type Obstacle = { x: number; w: number; h: number }
+import type { Game, Obstacle, Phase, Result } from '../types'
 
-export type Phase = 'ready' | 'playing' | 'paused' | 'over'
-
-export type Game = {
-  phase: Phase
-  /** Height above the ground, in rows. */
-  y: number
-  vy: number
-  obstacles: Obstacle[]
-  /** Distance run, in columns. */
-  distance: number
-  score: number
-  best: number
-  /** Columns to leave after the last obstacle before the next one. */
-  nextGap: number
-  /** Ticks spent since the run ended. */
-  overTicks: number
-  /** Ticks left before a paused run plays on. */
-  resumeTicks: number
-  seed: number
-}
+export type { Game, Obstacle, Phase, Result }
 
 export type Segment = { text: string; color?: string; dim?: boolean; bold?: boolean }
 
@@ -242,9 +223,6 @@ const groundRow = (cols: number): Segment[] => [{ text: '─'.repeat(cols), dim:
  */
 export const hasSetBest = (g: Game): boolean =>
   g.phase === 'over' ? g.score > 0 && g.score === g.best : g.score > g.best
-
-/** A settled run: its score, the high score after it, and whether it set that. */
-export type Result = { score: number; best: number; isNewBest: boolean }
 
 /** Draws a settled run in the game's place, the same size: status row, field, ground. */
 export const resultFrame = (r: Result, width: number): Segment[][] => {
