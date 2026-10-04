@@ -1,5 +1,9 @@
 # wait-jump
 
+[![ci](https://github.com/kawase1295/wait-jump/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/kawase1295/wait-jump/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Claude Code 2.1.287+](https://img.shields.io/badge/Claude%20Code-2.1.287%2B-D97757)](https://claude.com/claude-code)
+
 **Claude Jump**: a tiny jump game for Claude Code, in the spirit of the browser's offline dino. While Claude is working, a band above the prompt lets you jump `✻` over bugs (`#`) until the answer lands.
 
 ![Claude Jump: jumping bugs in the band above the prompt while Claude works](docs/demo.gif)
