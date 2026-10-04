@@ -2,6 +2,8 @@
 
 **Claude Jump**: a tiny jump game for Claude Code, in the spirit of the browser's offline dino. While Claude is working, a band above the prompt lets you jump `✻` over bugs (`#`) until the answer lands.
 
+![Claude Jump: jumping bugs in the band above the prompt while Claude works](docs/demo.gif)
+
 ```
 ✻ Claude Jump                                  HI 00213  00087
 
