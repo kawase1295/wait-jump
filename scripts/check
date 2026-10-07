@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Check entrypoint shared by the wt merge gate and CI (GitHub Actions).
+# Check entrypoint shared by the pre-merge local check and CI (GitHub Actions).
 # Validates the plugin/marketplace manifests and runs the mod's tests.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
