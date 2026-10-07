@@ -2,5 +2,5 @@
 .claude-plugin/types/
 tsconfig.json
 
-# wt worktrees
+# Claude Code worktrees
 .claude/worktrees/
